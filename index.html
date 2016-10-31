@@ -1,0 +1,253 @@
+<html>
+  <head>
+    <title>chessboard.js / chess.js pawn promotion example</title>
+    <link rel="stylesheet" href="chessboardjs-0.3.0/css/chessboard-0.3.0.css" />
+    <link rel="stylesheet" href="jquery-ui-1.11.4.custom/jquery-ui.css" />
+    <style>
+      body {
+        font-family: sans-serif;
+      }
+
+      #promotion-dialog {
+        display: none;
+      }
+
+      .ui-dialog {
+        padding: 0 !important;
+        width: 184px !important;
+        border: 0 !important;
+      }
+
+      .ui-dialog-content {
+        padding: 0 !important;
+        width: 184px !important;
+        border: 0 !important;
+      }
+
+      .ui-corner-all {
+        border-radius: 0;
+      }
+
+      .ui-state-default, .ui-widget-content .ui-state-default, .ui-widget-header .ui-state-default {
+        border: 0 !important;
+      }
+
+      #promote-to .ui-selecting {
+        background: #FECA40;
+      }
+
+      #promote-to .ui-selected {
+        background: #F39814;
+        color: white;
+      }
+
+      #promote-to {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+        width: 184px;
+        height: 46px;
+      }
+
+      #promote-to li {
+        margin: 0;
+        padding: 0;
+        width: 46px;
+        height: 46px;
+        cursor: pointer;
+        float: left !important;
+      }
+
+      .ui-dialog .ui-dialog-content {
+        padding: 0;
+      }
+
+      .no-close .ui-dialog-titlebar-close {
+        display: none;
+      }
+
+      .noTitleStuff .ui-dialog-titlebar {
+        display: none;
+      }
+
+      .promotion-piece {
+        width: 46px;
+        height: 46px;
+      }
+
+      .piece-name {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <p>chessboard.js / chess.js pawn promotion example: <a href="https://github.com/siansell/pawn-promotion">https://github.com/siansell/pawn-promotion</a></p>
+
+    <div id="board" style="width:400px;"></div>
+    <div id="promotion-dialog">
+      <ol id="promote-to">
+        <li class="ui-state-default"><span class="piece-name">q</span><img class="promotion-piece-q promotion-piece" /></li>
+        <li class="ui-state-default"><span class="piece-name">r</span><img class="promotion-piece-r promotion-piece" /></li>
+        <li class="ui-state-default"><span class="piece-name">n</span><img class="promotion-piece-n promotion-piece" /></li>
+        <li class="ui-state-default"><span class="piece-name">b</span><img class="promotion-piece-b promotion-piece" /></li>
+      </ol>
+    </div>
+    <p><span id="sideToMove"></span> to move. <a href="javascript:reset();">Reset board</a></p>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+    <script src="jquery-ui-1.11.4.custom/jquery-ui.js"></script>
+    <script src="chessboardjs-0.3.0/js/chessboard-0.3.0.js"></script>
+    <script src="chess.js-master/chess.js"></script>
+
+    <script>
+
+        var fen, game, piece_theme, promote_to, promoting, promotion_dialog;
+
+        piece_theme = 'chessboardjs-0.3.0/img/chesspieces/wikipedia/{piece}.png';
+        promotion_dialog = $('#promotion-dialog');
+
+        fen = '8/3P3P/8/1k6/8/6K1/1p1p4/8 w - - 0 1';
+
+        var game = new Chess(fen);
+        showSideToMove();
+        promoting = false;
+
+        // do not pick up pieces if the game is over
+        // only pick up pieces for the side to move
+        var onDragStart = function(source, piece, position, orientation) {
+          if (game.game_over() === true ||
+             (game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+             (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+               return false;
+          }
+        };
+
+        var onDrop = function(source, target) {
+          move_cfg = {
+            from: source,
+            to: target,
+            promotion: 'q'
+          };
+
+          // check we are not trying to make an illegal pawn move to the 8th or 1st rank,
+          // so the promotion dialog doesn't pop up unnecessarily
+          // e.g. (p)d7-f8
+          var move = game.move(move_cfg);
+          // illegal move
+          if (move === null) {
+            return 'snapback';
+          } else {
+            game.undo(); //move is ok, now we can go ahead and check for promotion
+          }
+
+          // is it a promotion?
+          var source_rank = source.substring(2,1);
+          var target_rank = target.substring(2,1);
+          var piece = game.get(source).type;
+
+          if (piece === 'p' &&
+             ((source_rank === '7' && target_rank === '8') || (source_rank === '2' && target_rank === '1'))) {
+               promoting = true;
+
+            // get piece images
+            $('.promotion-piece-q').attr('src', getImgSrc('q'));
+            $('.promotion-piece-r').attr('src', getImgSrc('r'));
+            $('.promotion-piece-n').attr('src', getImgSrc('n'));
+            $('.promotion-piece-b').attr('src', getImgSrc('b'));
+
+            //show the select piece to promote to dialog
+            promotion_dialog.dialog({
+              modal: true,
+              height: 46,
+              width: 184,
+              resizable: true,
+              draggable: false,
+              close: onDialogClose,
+              closeOnEscape: false,
+              dialogClass: 'noTitleStuff'
+            }).dialog('widget').position({
+              of: $('#board'),
+              my: 'middle middle',
+              at: 'middle middle',
+            });
+            //the actual move is made after the piece to promote to
+            //has been selected, in the stop event of the promotion piece selectable
+            return;
+          }
+
+          // no promotion, go ahead and move
+          makeMove(game, move_cfg);
+
+        }
+
+        var onSnapEnd = function() {
+          if (promoting) return; //if promoting we need to select the piece first
+          updateBoard(board);
+        };
+
+        function getImgSrc(piece) {
+          return piece_theme.replace('{piece}', game.turn() + piece.toLocaleUpperCase());
+        }
+
+        function updateBoard(board) {
+          board.position(game.fen(), false);
+          showSideToMove();
+          promoting = false;
+        }
+
+        var onDialogClose = function() {
+          // console.log(promote_to);
+          move_cfg.promotion = promote_to;
+          makeMove(game, move_cfg);
+        }
+
+        function makeMove(game, cfg) {
+          // see if the move is legal
+          var move = game.move(cfg);
+          // illegal move
+          if (move === null) return 'snapback';
+        }
+
+        function reset() {
+          game.load(fen);
+          board.position(fen);
+        }
+
+        function showSideToMove() {
+          var color = (game.turn() === 'w') ? 'White' : 'Black';
+          $("#sideToMove").text(color);
+        }
+
+        // init chessboard
+        var cfg = {
+          draggable: true,
+          onDragStart: onDragStart,
+          onDrop: onDrop,
+          onSnapEnd: onSnapEnd,
+          pieceTheme: piece_theme,
+          position: fen
+        };
+        var board = ChessBoard("board", cfg);
+
+        // init promotion piece dialog
+        $("#promote-to").selectable({
+          stop: function() {
+            $( ".ui-selected", this ).each(function() {
+              var selectable = $('#promote-to li');
+              var index = selectable.index(this);
+              if (index > -1) {
+                var promote_to_html = selectable[index].innerHTML;
+                var span = $('<div>' + promote_to_html + '</div>').find('span');
+                promote_to = span[0].innerHTML;
+              }
+              promotion_dialog.dialog('close');
+              $('.ui-selectee').removeClass('ui-selected');
+              updateBoard(board);
+            });
+          }
+        });
+
+    </script>
+
+  </body>
+</html>
